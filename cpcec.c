@@ -2595,6 +2595,20 @@ void all_reset(void) // reset everything!
 BYTE biostype_id=64; // keeper of the latest loaded BIOS type
 char bios_system[][13]={"cpc464.rom","cpc664.rom","cpc6128.rom","cpcplus.rom"};
 char bios_path[STRMAX]="";
+char lang = 'e'; // Default to English firmware
+
+void switch_lang(char l){
+	char roms_f[][13] = {"cpc464f.rom", "cpc664.rom", "cpc6128f.rom", "cpcplusf.rom"};
+	char roms_s[][13] = {"cpc464s.rom", "cpc664.rom", "cpc6128s.rom", "cpcpluss.rom"};
+	if (l=='f') { // French
+		lang = l;
+		for (int i = 0; i < length(bios_system); i++) strcpy(bios_system[i], roms_f[i]);
+	}
+	else if (l=='s') { // Spanish
+		lang = l;
+		for (int i = 0; i < length(bios_system); i++) strcpy(bios_system[i], roms_s[i]);
+	}
+}
 
 void bios_ignore_amsdos(FILE *f) // just in case some ROM files still include AMSDOS headers (i.e. the first 128 bytes)
 {
@@ -2636,6 +2650,10 @@ int bios_load(char *s) // load a cartridge file or a firmware ROM file. 0 OK, !0
 						if (i>=0&&i<length(mmu_xtr)-1)
 							if (ff=puff_fopen(u,"rb"))
 								bios_ignore_amsdos(ff),fread1(&mem_xtr[0x4000+(i<<14)],0x4000,ff),puff_fclose(ff),mmu_xtr[i+1]=1;
+					}
+					else if (!strcasecmp("lang",t))
+					{
+						switch_lang(*uu);
 					}
 					else if (!strcasecmp("type",t))
 					{
@@ -3772,6 +3790,7 @@ int session_user(int k) // handle the user's commands; 0 OK, !0 ERROR
 void session_configreadmore(char *s)
 {
 	int i; if (!s||!*s||!session_parmtr[0]) ; // ignore if empty or internal!
+	else if (!strcasecmp(session_parmtr,"lang")) { switch_lang(*s); }
 	else if (!strcasecmp(session_parmtr,"type")) { if ((i=*s&15)<length(bios_system)) type_id=i; }
 	else if (!strcasecmp(session_parmtr,"crtc")) { if ((i=*s&15)<5) crtc_type=i; }
 	else if (!strcasecmp(session_parmtr,"bank")) { if ((i=*s&15)<5) gate_ram_depth=i; }
@@ -3794,7 +3813,7 @@ void session_configreadmore(char *s)
 }
 void session_configwritemore(FILE *f)
 {
-	fprintf(f,"type %i\ncrtc %i\nbank %i\nfdcw %i\njoy1 %i\n"
+	fprintf(f,"lang %c\ntype %i\ncrtc %i\nbank %i\nfdcw %i\njoy1 %i\n"
 	#ifdef PSG_PLAYCITY
 		"plct %i\n"
 	#endif
@@ -3803,7 +3822,7 @@ void session_configwritemore(FILE *f)
 		"dntr %s\n"
 	#endif
 		"palette %i\nrewind %i\ndebug %i\n",
-		type_id,crtc_type,gate_ram_depth,disc_filemode,key2joy_flag,
+		lang,type_id,crtc_type,gate_ram_depth,disc_filemode,key2joy_flag,
 	#ifdef PSG_PLAYCITY
 		!playcity_disabled,
 	#endif
@@ -3987,6 +4006,9 @@ int main(int argc,char *argv[])
 						break;
 					case 'K':
 						gate_ram_depth=0;
+						break;
+					case 'l':
+						switch_lang(argv[i][j++]);
 						break;
 					case 'm':
 						type_id=(BYTE)(argv[i][j++]-'0');

@@ -110,6 +110,9 @@ short help explaining the available options.
 * -k2 : emulate 192k RAM;
 * -k3 : emulate 320k RAM;
 * -k4 : emulate 576k RAM;
+* -le : Use English language firmware files, by default;
+* -lf : Use French language firmware files;
+* -ls : Use Spanish language firmware files;
 * -m0 : start emulation as an Amstrad CPC 464;
 * -m1 : start emulation as an Amstrad CPC 664;
 * -m2 : start emulation as an Amstrad CPC 6128, by default;
@@ -235,6 +238,8 @@ INI files can be used to define a "profile", a set of extra ROMs to load on top
 of the current firmware. Internally they're simple text files where each line
 defines an attribute or a ROM:
 
+* lang = e,f,s : sets the firmware language (English, French, Spanish) to use
+as seen in the command line parameters -l[e,f,s];
 * type = 0..3 : sets the firmware type (for example 0 stands for CPC464) as seen
 in the command line parameters -m0..3;
 * bank = 0..4 : sets the RAM size (for example 0 stands for 64k) as seen in the
