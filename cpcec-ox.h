@@ -18,6 +18,9 @@
 #endif
 
 #include <SDL.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #ifdef _WIN32
 	#define STRMAX 288 // widespread in Windows

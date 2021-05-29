@@ -26,11 +26,14 @@ in the file GPL.TXT within the package.
 
 The default build of CPCEC requires a Microsoft Windows 2000 operating system or
 later, while the SDL2 build requires any operating system supported by the SDL2
-library [http://www.libsdl.org/] from version 2.0.4 or higher. The minimal
-hardware requirements are those fitting the operating system, and it's advised
-that the main microprocessor runs at 400 MHz at least. Screen resolution in
-pixels must be 800x600 at least. A sound card is optional, as well as equipping
-a joystick.
+library [http://www.libsdl.org/] from version 2.0.4 or higher. There is also
+experimental support for building CPCEC to WebAssembly in order to run it inside
+a web browser. This requires the Emscripten SDK [https://emscripten.org/] and is
+based on the SDL2 version. 
+The minimal hardware requirements are those fitting the operating system, and
+it's advised that the main microprocessor runs at 400 MHz at least. Screen
+resolution in pixels must be 800x600 at least. A sound card is optional, as well 
+as equipping a joystick.
 
 The emulator spans several files: the runnable binaries (by default CPCEC.EXE
 and ZXSEC.EXE for Windows) and the firmware files CPC464.ROM, CPC664.ROM,

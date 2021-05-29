@@ -3822,6 +3822,114 @@ void printferror(char *s) { sprintf(session_tmpstr,"Error: %s\n",s); session_mes
 #define printfusage(s) session_message(s,session_caption)
 #endif
 
+int mainloop(void)
+{
+	if (!session_listen())
+	{
+		while (!session_signal)
+			z80_main(
+				z80_multi*( // clump Z80 instructions together to gain speed...
+				((session_fast&-2)|tape_skipping)?VIDEO_LENGTH_X/16: // tape loading allows simple timings, but some sync is still needed
+					(video_pos_x<video_threshold?1:(VIDEO_LENGTH_X-1-video_pos_x)/16) // catch particular VRAM updates, as in "CHAPELLE SIXTEEN")
+					//(VIDEO_LENGTH_X+15-video_pos_x)/40) // all IRQ events happen early in each scanline!
+				) // ...without missing any IRQ and CRTC deadlines!
+			);
+		if (session_signal&SESSION_SIGNAL_FRAME) // end of frame?
+		{
+			if (!video_framecount&&onscreen_flag)
+			{
+				if (disc_disabled)
+					onscreen_text(+1, -3, "--\t--", 0);
+				else
+				{
+					int q=(disc_phase&2)&&!(disc_parmtr[1]&1);
+					onscreen_byte(+1,-3,disc_track[0],q);
+					if (disc_motor|disc_action) // disc drive is busy?
+						onscreen_char(+3,-3,!disc_action?'-':(disc_action>1?'W':'R'),1),disc_action=0;
+					q=(disc_phase&2)&&(disc_parmtr[1]&1);
+					onscreen_byte(+4,-3,disc_track[1],q);
+				}
+				int i,q=!tape_delay; //tape_enabled
+				if (tape_skipping)
+					onscreen_char(+6,-3,tape_skipping>0?'*':'+',q);
+				if (tape_filesize)
+				{
+					i=(long long)tape_filetell*1000/(tape_filesize+1);
+					onscreen_char(+7,-3,'0'+i/100,q);
+					onscreen_byte(+8,-3,i%100,q);
+				}
+				else
+					onscreen_text(+7, -3, tape_type < 0 ? "REC" : "---", q);
+				if (session_stick|session_key2joy)
+				{
+					onscreen_bool(-4,-8,1,2,kbd_bit_tst(kbd_joy[0]));
+					onscreen_bool(-4,-5,1,2,kbd_bit_tst(kbd_joy[1]));
+					onscreen_bool(-6,-6,2,1,kbd_bit_tst(kbd_joy[2]));
+					onscreen_bool(-3,-6,2,1,kbd_bit_tst(kbd_joy[3]));
+					onscreen_bool(-6,-2,2,1,kbd_bit_tst(kbd_joy[4]));
+					onscreen_bool(-3,-2,2,1,kbd_bit_tst(kbd_joy[5]));
+					if (video_threshold>VIDEO_LENGTH_X/4)
+						onscreen_bool(-4,-6,1,1,0);
+				}
+				/*#ifdef SDL2
+				if (session_audio) // SDL2 audio queue
+				{
+					if ((j=session_audioqueue)<0) j=0; else if (j>AUDIO_N_FRAMES) j=AUDIO_N_FRAMES;
+					onscreen_bool(+11,-2,j,1,1); onscreen_bool(j+11,-2,AUDIO_N_FRAMES-j,1,0);
+				}
+				#endif*/
+			}
+			video_threshold=VIDEO_LENGTH_X/4; // softer HSYNC threshold
+			// update session and continue
+			if (autorun_mode)
+				autorun_next();
+			if (!audio_disabled)
+			{
+				audio_main(TICKS_PER_FRAME); // fill sound buffer to the brim!
+			#ifdef PSG_PLAYCITY
+				if (!playcity_disabled)
+				{
+					// "ALCON 2020: SLAP FIGHT" uses just one Playcity chip: we make it MONO and restore the STEREO to the original AY chip
+					if (playcity_dirty<2)
+					{
+						playcity_stereo[1][0]+=playcity_stereo[0][0]; playcity_stereo[1][1]+=playcity_stereo[0][1];
+					}
+					playcity_main(audio_frame,AUDIO_LENGTH_Z);
+					if (playcity_dirty<2)
+					{
+						playcity_stereo[1][0]-=playcity_stereo[0][0]; playcity_stereo[1][1]-=playcity_stereo[0][1];
+						psg_stereo[0][0]=playcity_stereo[1][0]; psg_stereo[0][1]=playcity_stereo[1][1];
+						psg_stereo[2][0]=playcity_stereo[0][0]; psg_stereo[2][1]=playcity_stereo[0][1];
+					}
+					else
+					{
+						psg_stereo[0][0]=psg_stereo[2][0]=psg_stereo[1][0];
+						psg_stereo[0][1]=psg_stereo[2][1]=psg_stereo[1][1];
+					}
+				}
+			#endif
+			}
+			audio_queue=0; // wipe audio queue and force a reset
+			psg_writelog();
+			crtc_giga=crtc_giga_count>=156&&crtc_giga_count<312&&crtc_table[7]; crtc_giga_count=0; // autodetect Gigascreen effects
+			if (tape_enabled)
+				{ if (tape_delay>0) --tape_delay; } // handle tape delays
+			else if (tape_delay<3) // the tape is temporarily "deaf":
+				++tape_delay; // OPERA SOFT tapes need this delay! [3..]
+			if (tape_closed)
+				tape_closed=0,session_dirtymenu=1; // tag tape as closed
+			tape_skipping=audio_pos_z=0;
+			if (tape&&tape_skipload&&!tape_delay) // &&tape_enabled
+				session_fast|=2,video_framelimit|=(MAIN_FRAMESKIP_MASK+1),video_interlaced|=2,audio_disabled|=2; // abuse binary logic to reduce activity
+			else
+				session_fast&=~2,video_framelimit&=~(MAIN_FRAMESKIP_MASK+1),video_interlaced&=~2,audio_disabled&=~2; // ditto, to restore normal activity
+			session_update();
+		}
+		return 0;
+	}
+	return 1;
+}
+
 // START OF USER INTERFACE ========================================== //
 
 int main(int argc,char *argv[])
@@ -3975,108 +4083,14 @@ int main(int argc,char *argv[])
 	video_clut_update(); onscreen_inks(VIDEO1(0xAA0000),VIDEO1(0x55FF55));
 	if (session_fullscreen) session_togglefullscreen();
 	// it begins, "alea jacta est!"
-	while (!session_listen())
-	{
-		while (!session_signal)
-			z80_main(
-				z80_multi*( // clump Z80 instructions together to gain speed...
-				((session_fast&-2)|tape_skipping)?VIDEO_LENGTH_X/16: // tape loading allows simple timings, but some sync is still needed
-					(video_pos_x<video_threshold?1:(VIDEO_LENGTH_X-1-video_pos_x)/16) // catch particular VRAM updates, as in "CHAPELLE SIXTEEN")
-					//(VIDEO_LENGTH_X+15-video_pos_x)/40) // all IRQ events happen early in each scanline!
-				) // ...without missing any IRQ and CRTC deadlines!
-			);
-		if (session_signal&SESSION_SIGNAL_FRAME) // end of frame?
-		{
-			if (!video_framecount&&onscreen_flag)
-			{
-				if (disc_disabled)
-					onscreen_text(+1, -3, "--\t--", 0);
-				else
-				{
-					int q=(disc_phase&2)&&!(disc_parmtr[1]&1);
-					onscreen_byte(+1,-3,disc_track[0],q);
-					if (disc_motor|disc_action) // disc drive is busy?
-						onscreen_char(+3,-3,!disc_action?'-':(disc_action>1?'W':'R'),1),disc_action=0;
-					q=(disc_phase&2)&&(disc_parmtr[1]&1);
-					onscreen_byte(+4,-3,disc_track[1],q);
-				}
-				int i,q=!tape_delay; //tape_enabled
-				if (tape_skipping)
-					onscreen_char(+6,-3,tape_skipping>0?'*':'+',q);
-				if (tape_filesize)
-				{
-					i=(long long)tape_filetell*1000/(tape_filesize+1);
-					onscreen_char(+7,-3,'0'+i/100,q);
-					onscreen_byte(+8,-3,i%100,q);
-				}
-				else
-					onscreen_text(+7, -3, tape_type < 0 ? "REC" : "---", q);
-				if (session_stick|session_key2joy)
-				{
-					onscreen_bool(-4,-8,1,2,kbd_bit_tst(kbd_joy[0]));
-					onscreen_bool(-4,-5,1,2,kbd_bit_tst(kbd_joy[1]));
-					onscreen_bool(-6,-6,2,1,kbd_bit_tst(kbd_joy[2]));
-					onscreen_bool(-3,-6,2,1,kbd_bit_tst(kbd_joy[3]));
-					onscreen_bool(-6,-2,2,1,kbd_bit_tst(kbd_joy[4]));
-					onscreen_bool(-3,-2,2,1,kbd_bit_tst(kbd_joy[5]));
-					if (video_threshold>VIDEO_LENGTH_X/4)
-						onscreen_bool(-4,-6,1,1,0);
-				}
-				/*#ifdef SDL2
-				if (session_audio) // SDL2 audio queue
-				{
-					if ((j=session_audioqueue)<0) j=0; else if (j>AUDIO_N_FRAMES) j=AUDIO_N_FRAMES;
-					onscreen_bool(+11,-2,j,1,1); onscreen_bool(j+11,-2,AUDIO_N_FRAMES-j,1,0);
-				}
-				#endif*/
-			}
-			video_threshold=VIDEO_LENGTH_X/4; // softer HSYNC threshold
-			// update session and continue
-			if (autorun_mode)
-				autorun_next();
-			if (!audio_disabled)
-			{
-				audio_main(TICKS_PER_FRAME); // fill sound buffer to the brim!
-			#ifdef PSG_PLAYCITY
-				if (!playcity_disabled)
-				{
-					// "ALCON 2020: SLAP FIGHT" uses just one Playcity chip: we make it MONO and restore the STEREO to the original AY chip
-					if (playcity_dirty<2)
-					{
-						playcity_stereo[1][0]+=playcity_stereo[0][0]; playcity_stereo[1][1]+=playcity_stereo[0][1];
-					}
-					playcity_main(audio_frame,AUDIO_LENGTH_Z);
-					if (playcity_dirty<2)
-					{
-						playcity_stereo[1][0]-=playcity_stereo[0][0]; playcity_stereo[1][1]-=playcity_stereo[0][1];
-						psg_stereo[0][0]=playcity_stereo[1][0]; psg_stereo[0][1]=playcity_stereo[1][1];
-						psg_stereo[2][0]=playcity_stereo[0][0]; psg_stereo[2][1]=playcity_stereo[0][1];
-					}
-					else
-					{
-						psg_stereo[0][0]=psg_stereo[2][0]=psg_stereo[1][0];
-						psg_stereo[0][1]=psg_stereo[2][1]=psg_stereo[1][1];
-					}
-				}
-			#endif
-			}
-			audio_queue=0; // wipe audio queue and force a reset
-			psg_writelog();
-			crtc_giga=crtc_giga_count>=156&&crtc_giga_count<312&&crtc_table[7]; crtc_giga_count=0; // autodetect Gigascreen effects
-			if (tape_enabled)
-				{ if (tape_delay>0) --tape_delay; } // handle tape delays
-			else if (tape_delay<3) // the tape is temporarily "deaf":
-				++tape_delay; // OPERA SOFT tapes need this delay! [3..]
-			if (tape_closed)
-				tape_closed=0,session_dirtymenu=1; // tag tape as closed
-			tape_skipping=audio_pos_z=0;
-			if (tape&&tape_skipload&&!tape_delay) // &&tape_enabled
-				session_fast|=2,video_framelimit|=(MAIN_FRAMESKIP_MASK+1),video_interlaced|=2,audio_disabled|=2; // abuse binary logic to reduce activity
-			else
-				session_fast&=~2,video_framelimit&=~(MAIN_FRAMESKIP_MASK+1),video_interlaced&=~2,audio_disabled&=~2; // ditto, to restore normal activity
-			session_update();
-		}
-	}
+	#ifdef EMSCRIPTEN
+		// Setup periodic call of our main loop. Frame rate is controlled by the web browser.
+		emscripten_set_main_loop(mainloop, 0, 0);
+		// Exit main() but keep web application running
+		emscripten_exit_with_live_runtime();
+	#else
+	while (!mainloop());
+	#endif
 	// it's over, "acta est fabula"
 	z80_close(); if (mem_xtr) free(mem_xtr);
 	tape_close();
