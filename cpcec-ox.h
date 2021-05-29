@@ -17,7 +17,7 @@
 #define SDL_MAIN_HANDLED // required!
 #endif
 
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 #ifdef _WIN32
 	#define STRMAX 288 // widespread in Windows

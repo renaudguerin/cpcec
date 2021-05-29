@@ -72,6 +72,10 @@ sound becomes choppy due to the default buffer being too short.
 
 	gcc -DSDL2 -O2 -xc zxsec.c -lSDL2 -ozxsec
 
+Or use the provided Makefile (sdl2-config needs to be in your path)
+
+	make all # Builds cpcec, zxsec, and xrf
+
 Besides, the filenames must be in lower case: the contents of the ZIP archive
 may need to be extracted with "unzip -L cpcec-20XXXXXX.zip".
 
